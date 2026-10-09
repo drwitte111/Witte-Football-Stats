@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Witte Translator</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="overlay"></canvas>
+  </main>
+
+  <div id="topbar">
+    <label class="lang">
+      <span class="visually-hidden">Source language</span>
+      <select id="lang"></select>
+    </label>
+    <span id="status" role="status">Starting…</span>
+  </div>
+
+  <div id="bottombar">
+    <button id="debug" type="button" aria-pressed="false" title="Show OCR boxes">Boxes</button>
+    <button id="freeze" type="button" aria-pressed="false">Freeze</button>
+    <span id="stats"></span>
+  </div>
+
+  <div id="start" hidden>
+    <p id="start-msg">Camera access is needed to read text.</p>
+    <button id="start-btn" type="button">Start camera</button>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

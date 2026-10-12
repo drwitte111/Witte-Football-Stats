@@ -23,10 +23,9 @@ stat lines, games played, and points scored week by week (so per-game bonuses
 count correctly), with points per game. The first load downloads every game of
 the season; finished weeks are saved on the phone, so later loads are quick.
 
-Tap a player to compare their regular-season totals for the selected season
-against the previous season. Counting stats also show a per-game rate, and the
-green/red coloring compares per-game rates so a season in progress isn't
-measured against a full one.
+The list shows just rank, photo, name and points. Tap a player to see their
+full stat line for that week and how each scoring setting added up. In Full
+Season, the tap shows season totals, the points breakdown and points by week.
 
 Data comes straight from ESPN's public JSON API in the browser — no server, no
 API key. Weeks are cached on the phone; **Refresh** pulls fresh data from ESPN.

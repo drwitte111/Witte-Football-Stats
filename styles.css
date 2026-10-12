@@ -80,45 +80,30 @@ h1 { font-size: 22px; margin: 0; letter-spacing: -0.3px; }
 
 .card {
   display: grid;
-  grid-template-columns: 22px 48px 1fr auto;
+  grid-template-columns: 24px 40px 1fr auto;
   gap: 10px;
-  align-items: start;
+  align-items: center;
   width: 100%;
   text-align: left;
   color: inherit;
   font: inherit;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 10px;
-  margin-bottom: 8px;
+  border-radius: 10px;
+  padding: 6px 12px 6px 6px;
+  margin-bottom: 6px;
 }
 .card:active { background: var(--panel-2); }
 
-.rank { font-weight: 800; color: var(--muted); text-align: center; padding-top: 14px; }
-
-.pic { position: relative; width: 48px; height: 48px; }
-.pic img:first-child {
-  width: 48px; height: 48px; border-radius: 50%;
+.rank { font-weight: 800; color: var(--muted); text-align: center; font-size: 14px; }
+.pic { width: 40px; height: 40px; }
+.pic img {
+  width: 40px; height: 40px; border-radius: 50%;
   object-fit: cover; background: var(--panel-2);
 }
-.pic .logo {
-  position: absolute; right: -4px; bottom: -4px;
-  width: 20px; height: 20px; border-radius: 50%;
-  background: #fff; padding: 1px;
-}
-
-.info { min-width: 0; }
-.name { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.meta { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-.line { font-size: 12px; color: #c6cfdd; }
-.line b { display: inline-block; width: 38px; color: var(--muted); font-weight: 700; font-size: 10px; }
-
-.big { text-align: right; padding-top: 2px; }
-.yds { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
-.lbl { font-size: 9px; color: var(--muted); font-weight: 700; letter-spacing: 0.4px; }
-.fp { font-size: 12px; margin-top: 6px; color: #c6cfdd; font-weight: 600; }
-.fp small { color: var(--muted); font-size: 9px; }
+.name { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pts { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.meta { font-size: 12px; color: var(--muted); }
 
 .empty { text-align: center; color: var(--muted); padding: 32px 0; }
 
@@ -161,9 +146,6 @@ h1 { font-size: 22px; margin: 0; letter-spacing: -0.3px; }
 .cmp thead th { font-size: 12px; color: var(--muted); text-align: right; }
 .cmp tbody th { text-align: left; color: var(--muted); font-weight: 600; font-size: 13px; width: 30%; }
 .cmp td { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-.cmp td small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
-.cmp td.up { color: var(--good); }
-.cmp td.down { color: var(--bad); }
 
 /* ---------- scoring settings ---------- */
 
@@ -185,3 +167,12 @@ h1 { font-size: 22px; margin: 0; letter-spacing: -0.3px; }
   border-radius: 10px; padding: 12px; font: 600 15px/1.2 inherit; font-family: inherit;
 }
 .cmp.scoring th { font-family: ui-monospace, Menlo, monospace; font-size: 12px; width: auto; }
+
+/* ---------- player stat sheet ---------- */
+
+.sheet-score { margin-top: 12px; }
+.pts-big { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; }
+.sheet-score small { color: var(--muted); font-weight: 700; font-size: 12px; }
+.sheet-score .sub { margin: 2px 0 0; }
+.cmp.stat tbody th, .cmp.stat th { width: auto; }
+.cmp.stat th small { color: var(--muted); font-weight: 500; font-size: 11px; margin-left: 4px; }

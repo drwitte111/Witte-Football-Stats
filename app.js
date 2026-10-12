@@ -2,7 +2,6 @@
 
 // ESPN public JSON endpoints (no key needed, CORS-enabled).
 const SITE = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
-const WEB = 'https://site.web.api.espn.com/apis/common/v3/sports/football/nfl';
 const CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl';
 
 const TOP_N = 30;
@@ -440,6 +439,7 @@ async function showSeason(force = false) {
           data = await getWeek(view.season, 2, w, true);
         }
         if (data.played > 0) {
+          data.players.forEach((pl) => { pl.week = w; });
           weeks.push(data);
           if (data.sleeper) sleeperWeeks++;
           latest = Math.max(latest, data.fetchedAt);
@@ -624,11 +624,20 @@ function scoring() {
   return (league && league.scoring) || DEFAULT_SCORING;
 }
 
-// Season rows carry their weekly lines; score each week, then sum.
-function fantasyPoints(p) {
-  if (p.weekly) return p.weekly.reduce((sum, w) => sum + fantasyPoints(w), 0);
+// Points per scoring key: { key: { count, pts } }. Season rows carry their
+// weekly lines; each week is scored on its own, then summed.
+function pointsBreakdown(p) {
+  const out = {};
+  if (p.weekly) {
+    p.weekly.forEach((w) => {
+      Object.entries(pointsBreakdown(w)).forEach(([k, v]) => {
+        const o = out[k] || (out[k] = { count: 0, pts: 0 });
+        o.count += v.count; o.pts += v.pts;
+      });
+    });
+    return out;
+  }
   const sc = scoring();
-  let pts = 0;
   for (const k in sc) {
     const w = sc[k];
     if (!w) continue;
@@ -641,8 +650,13 @@ function fantasyPoints(p) {
     } else if (fn) {
       v = fn(p);
     }
-    pts += v * w;
+    if (v) out[k] = { count: v, pts: v * w };
   }
+  return out;
+}
+
+function fantasyPoints(p) {
+  const pts = Object.values(pointsBreakdown(p)).reduce((sum, v) => sum + v.pts, 0);
   return Math.round(pts * 100) / 100;
 }
 
@@ -749,18 +763,6 @@ function openSettings() {
   });
 }
 
-function statLines(p) {
-  const lines = [];
-  const pass = () => p.att > 0 && lines.push(['PASS', `${p.cmp}/${p.att}, ${p.passYds} yds, ${p.passTD} TD, ${p.int} INT${p.sacks ? `, ${p.sacks} sk` : ''}${p.rtg != null ? `, ${p.rtg.toFixed(1)} rtg` : ''}`]);
-  const rush = () => p.car > 0 && lines.push(['RUSH', `${p.car} car, ${p.rushYds} yds, ${(p.rushYds / p.car).toFixed(1)} avg, ${p.rushTD} TD, ${p.rushLong} lng`]);
-  const rec = () => (p.rec > 0 || p.tgt > 0) && lines.push(['REC', `${p.rec}/${p.tgt || p.rec} tgt, ${p.recYds} yds, ${p.rec ? (p.recYds / p.rec).toFixed(1) : '0.0'} avg, ${p.recTD} TD, ${p.recLong} lng`]);
-  if (p.pos === 'QB') { pass(); rush(); rec(); }
-  else if (p.pos === 'RB') { rush(); rec(); pass(); }
-  else { rec(); rush(); pass(); }
-  if (p.fumLost > 0) lines.push(['FUM', `${p.fumLost} lost`]);
-  return lines;
-}
-
 function render() {
   const yards = SORT_BY[state.pos];
   const rows = state.players
@@ -779,107 +781,73 @@ function render() {
       <div class="rank">${i + 1}</div>
       <div class="pic">
         ${p.headshot ? `<img src="${escapeHtml(p.headshot)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
-        ${p.teamLogo ? `<img class="logo" src="${escapeHtml(p.teamLogo)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
       </div>
-      <div class="info">
-        <div class="name">${escapeHtml(p.name)}</div>
-        <div class="meta">${escapeHtml(p.team)} ${escapeHtml(p.game)}${p.weekly ? ` · ${(pts / p.gp).toFixed(1)}/g` : ''}</div>
-        ${statLines(p).map(([k, v]) => `<div class="line"><b>${k}</b> ${escapeHtml(v)}</div>`).join('')}
-      </div>
-      <div class="big">
-        <div class="yds">${pts.toFixed(1)}</div>
-        <div class="lbl">${scoringLabel()}</div>
-        <div class="fp">${p[yards.key]} <small>${yards.label}</small></div>
-      </div>
+      <div class="name">${escapeHtml(p.name)}</div>
+      <div class="pts">${pts.toFixed(1)}</div>
     </button>`).join('');
 }
 
-// ---------- player detail: season vs previous season ----------
+// ---------- player detail: full stat line ----------
 
-const DETAIL_CATS = {
-  passing: { title: 'Passing', want: ['GP', 'CMP', 'ATT', 'CMP%', 'YDS', 'AVG', 'TD', 'INT', 'SACK', 'RTG'] },
-  rushing: { title: 'Rushing', want: ['GP', 'CAR', 'YDS', 'AVG', 'TD', 'LNG', 'FUM', 'LST'] },
-  receiving: { title: 'Receiving', want: ['GP', 'REC', 'TGTS', 'YDS', 'AVG', 'TD', 'LNG', 'FUM', 'LST'] },
+const STAT_LABELS = {
+  pass_yd: 'Pass yds', pass_td: 'Pass TD', pass_int: 'INT', pass_cmp: 'Completions', pass_att: 'Pass att',
+  pass_inc: 'Incompletions', pass_sack: 'Sacks', pass_2pt: 'Pass 2-pt', pass_fd: 'Pass 1st downs',
+  rush_yd: 'Rush yds', rush_td: 'Rush TD', rush_att: 'Carries', rush_2pt: 'Rush 2-pt', rush_fd: 'Rush 1st downs',
+  rec: 'Receptions', rec_yd: 'Rec yds', rec_td: 'Rec TD', rec_tgt: 'Targets', rec_2pt: 'Rec 2-pt', rec_fd: 'Rec 1st downs',
+  rec_40p: '40+ yd catches', rush_40p: '40+ yd runs', pass_cmp_40p: '40+ yd completions',
+  bonus_rec_te: 'TE catch bonus', bonus_rec_rb: 'RB catch bonus', bonus_rec_wr: 'WR catch bonus',
+  bonus_rec_yd_100: '100-yd rec game', bonus_rush_yd_100: '100-yd rush game', bonus_pass_yd_300: '300-yd pass game',
+  bonus_pass_yd_400: '400-yd pass game', fum_lost: 'Fumbles lost', fum: 'Fumbles',
 };
 
-// Returns { passing: { 2025: {LABEL: value}, ... }, ... } of regular-season totals.
-async function fetchCareer(id) {
-  const cacheKey = `career:${id}`;
-  const cached = load(cacheKey);
-  if (cached && Date.now() - cached.fetchedAt < 6 * 3600 * 1000) return cached.data;
-
-  const data = await getJSON(`${WEB}/athletes/${id}/stats?region=us&lang=en&contentorigin=espn`);
-  const out = {};
-  (data.categories || []).forEach((cat) => {
-    if (!DETAIL_CATS[cat.name]) return;
-    const labels = cat.labels || [];
-    const bySeason = {};
-    (cat.statistics || []).forEach((row) => {
-      const year = row.season && (row.season.year || parseInt(row.season.displayName, 10));
-      if (!year) return;
-      const vals = {};
-      labels.forEach((l, i) => { vals[l] = row.stats[i]; });
-      // A traded player has one row per team; sum the counting stats.
-      bySeason[year] = bySeason[year] ? mergeSeason(bySeason[year], vals) : vals;
-    });
-    out[cat.name] = bySeason;
-  });
-  store(cacheKey, { fetchedAt: Date.now(), data: out });
-  return out;
+function statTable(title, rows) {
+  const shown = rows.filter(([, v]) => v != null);
+  if (!shown.length) return '';
+  return `<h3>${title}</h3><table class="cmp stat">${shown.map(([k, v]) =>
+    `<tr><th>${k}</th><td>${escapeHtml(v)}</td></tr>`).join('')}</table>`;
 }
 
-function mergeSeason(a, b) {
-  const m = { ...a };
-  Object.keys(b).forEach((k) => {
-    if (['AVG', 'CMP%', 'RTG', 'QBR', 'Y/A'].includes(k)) m[k] = '—'; // rates can't be summed
-    else if (k === 'LNG') m[k] = String(Math.max(num(a[k]), num(b[k])));
-    else m[k] = String(num(a[k]) + num(b[k]));
-  });
-  return m;
+function statSections(p) {
+  const avg = (a, b) => (b ? (a / b).toFixed(1) : '0.0');
+  const pass = () => p.att > 0 && statTable('Passing', [
+    ['Comp / Att', `${p.cmp} / ${p.att}`], ['Yards', p.passYds], ['TD', p.passTD], ['INT', p.int],
+    ['Yds / Att', avg(p.passYds, p.att)], ['Sacks', p.sacks], ['Rating', p.rtg != null ? p.rtg.toFixed(1) : null],
+  ]);
+  const rush = () => p.car > 0 && statTable('Rushing', [
+    ['Carries', p.car], ['Yards', p.rushYds], ['Avg', avg(p.rushYds, p.car)], ['TD', p.rushTD], ['Long', p.rushLong],
+  ]);
+  const rec = () => (p.rec > 0 || p.tgt > 0) && statTable('Receiving', [
+    ['Rec / Tgt', `${p.rec} / ${p.tgt || p.rec}`], ['Yards', p.recYds], ['Avg', avg(p.recYds, p.rec)], ['TD', p.recTD], ['Long', p.recLong],
+  ]);
+  const order = p.pos === 'QB' ? [pass, rush, rec] : p.pos === 'RB' ? [rush, rec, pass] : [rec, rush, pass];
+  const parts = order.map((f) => f()).filter(Boolean);
+  if (p.fum > 0) parts.push(statTable('Fumbles', [['Fumbles', p.fum], ['Lost', p.fumLost]]));
+  return parts.join('');
 }
 
-// Rate stats are compared as-is; counting stats are compared per game so a
-// season in progress isn't measured against a full one.
-const RATE_STATS = new Set(['GP', 'CMP%', 'AVG', 'RTG', 'QBR', 'LNG', 'Y/A']);
-const LOWER_IS_BETTER = new Set(['INT', 'SACK', 'FUM', 'LST']);
-
-function compareTable(cat, cur, prev, season) {
-  const spec = DETAIL_CATS[cat];
-  const a = cur || {}, b = prev || {};
-  const labels = spec.want.filter((l) => l in a || l in b);
-  if (!labels.length) return '';
-  const gpA = num(a.GP), gpB = num(b.GP);
-  const cell = (v, gp, l) => {
-    if (v == null) return '—';
-    if (RATE_STATS.has(l) || !gp || v === '—') return escapeHtml(v);
-    return `${escapeHtml(v)}<small>${(num(v) / gp).toFixed(1)}/g</small>`;
-  };
-  const body = labels.map((l) => {
-    const x = a[l], y = b[l];
-    let cls = '';
-    if (x != null && y != null && l !== 'GP' && x !== '—' && y !== '—') {
-      const perGame = !RATE_STATS.has(l) && gpA && gpB;
-      const vx = perGame ? num(x) / gpA : num(x);
-      const vy = perGame ? num(y) / gpB : num(y);
-      if (Math.abs(vx - vy) > 1e-9) {
-        const better = LOWER_IS_BETTER.has(l) ? vx < vy : vx > vy;
-        cls = better ? 'up' : 'down';
-      }
-    }
-    return `<tr><th>${l}</th><td class="${cls}">${cell(x, gpA, l)}</td><td>${cell(y, gpB, l)}</td></tr>`;
-  }).join('');
-  return `
-    <h3>${spec.title}</h3>
-    <table class="cmp">
-      <thead><tr><th></th><th>${season}</th><th>${season - 1}</th></tr></thead>
-      <tbody>${body}</tbody>
-    </table>`;
+function breakdownTable(p) {
+  const rows = Object.entries(pointsBreakdown(p))
+    .filter(([, v]) => Math.abs(v.pts) > 0.001)
+    .sort((a, b) => Math.abs(b[1].pts) - Math.abs(a[1].pts));
+  if (!rows.length) return '';
+  return `<h3>Points</h3><table class="cmp stat">${rows.map(([k, v]) =>
+    `<tr><th>${escapeHtml(STAT_LABELS[k] || k)} <small>× ${+v.count.toFixed(2)}</small></th><td>${v.pts > 0 ? '+' : ''}${v.pts.toFixed(2)}</td></tr>`).join('')}</table>`;
 }
 
-async function openPlayer(id) {
+function weeklyTable(p) {
+  const weeks = [...p.weekly].sort((a, b) => (a.week || 0) - (b.week || 0));
+  return `<h3>By week</h3><table class="cmp stat">${weeks.map((w) =>
+    `<tr><th>Wk ${w.week || '?'} <small>${escapeHtml(w.game)}</small></th><td>${fantasyPoints(w).toFixed(1)}</td></tr>`).join('')}</table>`;
+}
+
+function openPlayer(id) {
   const p = state.players.find((x) => x.id === id);
   if (!p) return;
-  const season = state.season;
+  const pts = fantasyPoints(p);
+  const season = !!p.weekly;
+  const sub = season
+    ? `${state.season} regular season · ${p.gp} GP · ${(pts / p.gp).toFixed(1)} pts/g`
+    : `${state.type === 3 ? els.week.selectedOptions[0].textContent : `Week ${state.week}`} ${state.season} · ${p.game}`;
 
   const sheet = document.createElement('div');
   sheet.className = 'sheet-wrap';
@@ -893,8 +861,13 @@ async function openPlayer(id) {
         </div>
         <button type="button" class="close" aria-label="Close">✕</button>
       </div>
-      <p class="sub">Regular season totals, ${season} vs ${season - 1}. Colors compare per-game rates: green = better than last year.</p>
-      <div class="sheet-body"><p class="empty">Loading…</p></div>
+      <div class="sheet-score">
+        <div><span class="pts-big">${pts.toFixed(1)}</span> <small>${scoringLabel()}</small></div>
+        <div class="sub">${escapeHtml(sub)}</div>
+      </div>
+      ${statSections(p)}
+      ${breakdownTable(p)}
+      ${season ? weeklyTable(p) : ''}
     </div>`;
   document.body.appendChild(sheet);
   document.body.classList.add('noscroll');
@@ -908,21 +881,6 @@ async function openPlayer(id) {
   sheet.addEventListener('click', (e) => {
     if (e.target === sheet || e.target.closest('.close')) close();
   });
-
-  const body = sheet.querySelector('.sheet-body');
-  try {
-    const career = await fetchCareer(id);
-    const order = p.pos === 'QB' ? ['passing', 'rushing', 'receiving']
-      : p.pos === 'RB' ? ['rushing', 'receiving', 'passing']
-        : ['receiving', 'rushing', 'passing'];
-    const html = order
-      .map((cat) => career[cat] && compareTable(cat, career[cat][season], career[cat][season - 1], season))
-      .filter(Boolean)
-      .join('');
-    body.innerHTML = html || `<p class="empty">No season stats on ESPN for ${season} or ${season - 1}.</p>`;
-  } catch (err) {
-    body.innerHTML = `<p class="empty err">Couldn't load season stats (${escapeHtml(err.message)}).</p>`;
-  }
 }
 
 // ---------- pickers ----------

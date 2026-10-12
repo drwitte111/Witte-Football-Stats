@@ -153,6 +153,7 @@ function blankPlayer(a, team) {
     team: team.abbreviation || '',
     teamId: String(team.id || ''),
     teamLogo: team.logo || '',
+    teamColor: team.color ? `#${team.color}` : '',
     game: '',
     cmp: 0, att: 0, passYds: 0, passTD: 0, int: 0, sacks: 0, rtg: null, qbr: null,
     car: 0, rushYds: 0, rushTD: 0, rushLong: 0,
@@ -409,7 +410,7 @@ function aggregateSeason(weeks) {
       SUM_FIELDS.forEach((f) => { t[f] += p[f] || 0; });
       t.rushLong = Math.max(t.rushLong, p.rushLong || 0);
       t.recLong = Math.max(t.recLong, p.recLong || 0);
-      t.team = p.team; t.teamLogo = p.teamLogo || t.teamLogo; t.headshot = p.headshot || t.headshot;
+      t.team = p.team; t.teamLogo = p.teamLogo || t.teamLogo; t.teamColor = p.teamColor || t.teamColor; t.headshot = p.headshot || t.headshot;
       t.gp += 1;
       t.weekly.push(p);
     });
@@ -699,12 +700,11 @@ async function refreshLeague() {
 }
 
 function openSettings() {
-  const sheet = document.createElement('div');
-  sheet.className = 'sheet-wrap';
   const unsupported = league ? unsupportedKeys(league.scoring) : [];
   const used = Object.entries(scoring()).filter(([k, v]) => v && SCORING_STATS[k]);
-  sheet.innerHTML = `
-    <div class="sheet" role="dialog" aria-modal="true">
+  const { sheet, close } = presentSheet(`
+    <div class="sheet-top">
+      <div class="grabber"></div>
       <div class="sheet-head">
         <div>
           <div class="name">Fantasy scoring</div>
@@ -712,30 +712,18 @@ function openSettings() {
         </div>
         <button type="button" class="close" aria-label="Close">✕</button>
       </div>
-      <form class="link-form">
-        <label class="picker"><span>Sleeper username</span>
-          <input name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"
-            value="${escapeHtml(league ? league.username : '')}" placeholder="your Sleeper username">
-        </label>
-        <button type="submit" class="refresh">Find leagues</button>
-      </form>
-      <div class="league-list"></div>
-      <h3>Scoring in use</h3>
-      <table class="cmp scoring">${used.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${v > 0 ? '+' : ''}${v}</td></tr>`).join('')}</table>
-      <p class="sub">Points use Sleeper's own weekly stats, so they should match Sleeper.${unsupported.length ? ` If Sleeper's stats can't be loaded, the app falls back to ESPN box scores, which can't count: ${unsupported.map(escapeHtml).join(', ')}.` : ''}</p>
-    </div>`;
-  document.body.appendChild(sheet);
-  document.body.classList.add('noscroll');
-  requestAnimationFrame(() => sheet.classList.add('open'));
-
-  const close = () => {
-    sheet.classList.remove('open');
-    document.body.classList.remove('noscroll');
-    setTimeout(() => sheet.remove(), 250);
-  };
-  sheet.addEventListener('click', (e) => {
-    if (e.target === sheet || e.target.closest('.close')) close();
-  });
+    </div>
+    <form class="link-form">
+      <label class="field"><span>Sleeper username</span>
+        <input name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"
+          value="${escapeHtml(league ? league.username : '')}" placeholder="username">
+      </label>
+      <button type="submit" class="btn">Find leagues</button>
+    </form>
+    <div class="league-list"></div>
+    <h3>Scoring in use</h3>
+    <div class="ilist">${used.map(([k, v]) => `<div class="irow mono"><span>${escapeHtml(k)}</span><span class="v${v < 0 ? ' neg' : ''}">${v > 0 ? '+' : ''}${v}</span></div>`).join('')}</div>
+    <p class="sub">Points use Sleeper's own weekly stats, so they should match Sleeper.${unsupported.length ? ` If Sleeper's stats can't be loaded, the app falls back to ESPN box scores, which can't count: ${unsupported.map(escapeHtml).join(', ')}.` : ''}</p>`);
 
   const listEl = sheet.querySelector('.league-list');
   sheet.querySelector('form').addEventListener('submit', async (e) => {
@@ -763,7 +751,36 @@ function openSettings() {
   });
 }
 
+// Team colors are often near-black; lift dark ones so they read on an OLED black.
+function teamTint(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return '';
+  let [r, g, b] = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  if (lum < 0.35) {
+    const t = Math.min(0.55, 0.35 - lum + 0.25);
+    [r, g, b] = [r, g, b].map((c) => Math.round(c + (255 - c) * t));
+  }
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function initials(name) {
+  return String(name || '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+}
+
+function avatar(p) {
+  return `<div class="avatar">${p.headshot
+    ? `<img src="${escapeHtml(p.headshot)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${escapeHtml(initials(p.name))}'}))">`
+    : `<span>${escapeHtml(initials(p.name))}</span>`}</div>`;
+}
+
+function skeleton(n = 8) {
+  return `<div class="group">${Array.from({ length: n }, () => `
+    <div class="row skel"><div></div><div class="avatar"></div><div class="bar"></div><div class="bar short"></div></div>`).join('')}</div>`;
+}
+
 function render() {
+  updateTitle();
   const yards = SORT_BY[state.pos];
   const rows = state.players
     .filter((p) => p.pos === state.pos)
@@ -772,19 +789,80 @@ function render() {
     .slice(0, TOP_N);
 
   if (!rows.length) {
-    els.list.innerHTML = state.loading || !state.players.length ? '' : '<p class="empty">No stats yet.</p>';
+    els.list.innerHTML = state.loading ? skeleton() : state.players.length ? '<p class="empty">No stats yet.</p>' : '';
     return;
   }
 
-  els.list.innerHTML = rows.map(({ p, pts }, i) => `
-    <button type="button" class="card" data-id="${escapeHtml(p.id)}">
-      <div class="rank">${i + 1}</div>
-      <div class="pic">
-        ${p.headshot ? `<img src="${escapeHtml(p.headshot)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+  const top = Math.max(rows[0].pts, 1);
+  els.list.innerHTML = `<div class="group">${rows.map(({ p, pts }, i) => `
+    <button type="button" class="row" data-id="${escapeHtml(p.id)}"${p.teamColor ? ` style="--ring:${teamTint(p.teamColor)}"` : ''}>
+      <div class="rank${i < 3 ? ` medal m${i + 1}` : ''}">${i + 1}</div>
+      ${avatar(p)}
+      <div class="who">
+        <div class="name">${escapeHtml(p.name)}</div>
+        <div class="meter"><i style="width:${Math.max(0, Math.min(100, (pts / top) * 100)).toFixed(1)}%"></i></div>
       </div>
-      <div class="name">${escapeHtml(p.name)}</div>
       <div class="pts">${pts.toFixed(1)}</div>
-    </button>`).join('');
+    </button>`).join('')}</div>`;
+}
+
+function weekLabel() {
+  if (state.week === 'all') return 'Full Season';
+  if (state.type === 3) {
+    const found = POSTSEASON_WEEKS.find(([w]) => w === state.week);
+    return found ? found[1] : 'Playoffs';
+  }
+  return `Week ${state.week}`;
+}
+
+function updateTitle() {
+  $('title').textContent = weekLabel();
+  $('eyebrow').textContent = `${state.season || ''} · ${league ? league.name : 'Standard PPR'}`;
+}
+
+// Bottom sheet with a grabber; drag down from the top to dismiss.
+function presentSheet(html, team) {
+  const wrap = document.createElement('div');
+  wrap.className = 'sheet-wrap';
+  wrap.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  const sheet = wrap.firstElementChild;
+  if (team) sheet.style.setProperty('--team', team);
+  document.body.appendChild(wrap);
+  document.body.classList.add('noscroll');
+  requestAnimationFrame(() => wrap.classList.add('open'));
+
+  const close = () => {
+    wrap.classList.remove('open');
+    sheet.style.transform = '';
+    document.body.classList.remove('noscroll');
+    setTimeout(() => wrap.remove(), 320);
+  };
+  wrap.addEventListener('click', (e) => {
+    if (e.target === wrap || e.target.closest('.close')) close();
+  });
+
+  let startY = null, dy = 0;
+  sheet.addEventListener('touchstart', (e) => {
+    if (sheet.scrollTop > 0) { startY = null; return; }
+    startY = e.touches[0].clientY; dy = 0;
+  }, { passive: true });
+  sheet.addEventListener('touchmove', (e) => {
+    if (startY == null) return;
+    dy = e.touches[0].clientY - startY;
+    if (dy > 0) {
+      sheet.classList.add('dragging');
+      sheet.style.transform = `translateY(${dy}px)`;
+      if (e.cancelable) e.preventDefault();
+    }
+  }, { passive: false });
+  sheet.addEventListener('touchend', () => {
+    if (startY == null) return;
+    sheet.classList.remove('dragging');
+    if (dy > 110) close();
+    else sheet.style.transform = '';
+    startY = null;
+  });
+  return { wrap, sheet, close };
 }
 
 // ---------- player detail: full stat line ----------
@@ -800,44 +878,61 @@ const STAT_LABELS = {
   bonus_pass_yd_400: '400-yd pass game', fum_lost: 'Fumbles lost', fum: 'Fumbles',
 };
 
-function statTable(title, rows) {
-  const shown = rows.filter(([, v]) => v != null);
+function tiles(title, items) {
+  const shown = items.filter(([, v]) => v != null);
   if (!shown.length) return '';
-  return `<h3>${title}</h3><table class="cmp stat">${shown.map(([k, v]) =>
-    `<tr><th>${k}</th><td>${escapeHtml(v)}</td></tr>`).join('')}</table>`;
+  return `<h3>${title}</h3><div class="tiles">${shown.map(([k, v]) =>
+    `<div class="tile"><b>${escapeHtml(v)}</b><span>${k}</span></div>`).join('')}</div>`;
 }
 
 function statSections(p) {
   const avg = (a, b) => (b ? (a / b).toFixed(1) : '0.0');
-  const pass = () => p.att > 0 && statTable('Passing', [
-    ['Comp / Att', `${p.cmp} / ${p.att}`], ['Yards', p.passYds], ['TD', p.passTD], ['INT', p.int],
-    ['Yds / Att', avg(p.passYds, p.att)], ['Sacks', p.sacks], ['Rating', p.rtg != null ? p.rtg.toFixed(1) : null],
+  const pass = () => p.att > 0 && tiles('Passing', [
+    ['Comp / Att', `${p.cmp}/${p.att}`], ['Yards', p.passYds], ['TD', p.passTD],
+    ['INT', p.int], ['Yds / Att', avg(p.passYds, p.att)], ['Sacks', p.sacks],
+    ...(p.rtg != null ? [['Rating', p.rtg.toFixed(1)]] : []),
   ]);
-  const rush = () => p.car > 0 && statTable('Rushing', [
-    ['Carries', p.car], ['Yards', p.rushYds], ['Avg', avg(p.rushYds, p.car)], ['TD', p.rushTD], ['Long', p.rushLong],
+  const rush = () => p.car > 0 && tiles('Rushing', [
+    ['Carries', p.car], ['Yards', p.rushYds], ['TD', p.rushTD], ['Avg', avg(p.rushYds, p.car)], ['Long', p.rushLong],
   ]);
-  const rec = () => (p.rec > 0 || p.tgt > 0) && statTable('Receiving', [
-    ['Rec / Tgt', `${p.rec} / ${p.tgt || p.rec}`], ['Yards', p.recYds], ['Avg', avg(p.recYds, p.rec)], ['TD', p.recTD], ['Long', p.recLong],
+  const rec = () => (p.rec > 0 || p.tgt > 0) && tiles('Receiving', [
+    ['Rec / Tgt', `${p.rec}/${p.tgt || p.rec}`], ['Yards', p.recYds], ['TD', p.recTD], ['Avg', avg(p.recYds, p.rec)], ['Long', p.recLong],
   ]);
   const order = p.pos === 'QB' ? [pass, rush, rec] : p.pos === 'RB' ? [rush, rec, pass] : [rec, rush, pass];
   const parts = order.map((f) => f()).filter(Boolean);
-  if (p.fum > 0) parts.push(statTable('Fumbles', [['Fumbles', p.fum], ['Lost', p.fumLost]]));
+  if (p.fum > 0) parts.push(tiles('Fumbles', [['Fumbles', p.fum], ['Lost', p.fumLost]]));
   return parts.join('');
 }
 
-function breakdownTable(p) {
+function breakdownList(p) {
   const rows = Object.entries(pointsBreakdown(p))
     .filter(([, v]) => Math.abs(v.pts) > 0.001)
     .sort((a, b) => Math.abs(b[1].pts) - Math.abs(a[1].pts));
   if (!rows.length) return '';
-  return `<h3>Points</h3><table class="cmp stat">${rows.map(([k, v]) =>
-    `<tr><th>${escapeHtml(STAT_LABELS[k] || k)} <small>× ${+v.count.toFixed(2)}</small></th><td>${v.pts > 0 ? '+' : ''}${v.pts.toFixed(2)}</td></tr>`).join('')}</table>`;
+  return `<h3>Points breakdown</h3><div class="ilist">${rows.map(([k, v]) => `
+    <div class="irow"><span>${escapeHtml(STAT_LABELS[k] || k)}<small>× ${+v.count.toFixed(2)}</small></span>
+    <span class="v${v.pts < 0 ? ' neg' : ''}">${v.pts > 0 ? '+' : ''}${v.pts.toFixed(2)}</span></div>`).join('')}</div>`;
 }
 
-function weeklyTable(p) {
-  const weeks = [...p.weekly].sort((a, b) => (a.week || 0) - (b.week || 0));
-  return `<h3>By week</h3><table class="cmp stat">${weeks.map((w) =>
-    `<tr><th>Wk ${w.week || '?'} <small>${escapeHtml(w.game)}</small></th><td>${fantasyPoints(w).toFixed(1)}</td></tr>`).join('')}</table>`;
+// Points by week: one series, one hue, tap a bar to read it.
+function weeklyChart(p) {
+  const byWeek = {};
+  p.weekly.forEach((w) => { byWeek[w.week] = w; });
+  const n = regularWeeks(state.season);
+  const weeks = Array.from({ length: n }, (_, i) => i + 1);
+  const pts = weeks.map((w) => (byWeek[w] ? fantasyPoints(byWeek[w]) : null));
+  const max = Math.max(1, ...pts.filter((v) => v != null));
+  const best = pts.indexOf(Math.max(...pts.filter((v) => v != null)));
+  return `<h3>Points by week</h3>
+    <div class="chart">
+      <div class="chart-read" data-default="Best: <b>${best >= 0 ? pts[best].toFixed(1) : '—'}</b> in Week ${best + 1}">Best: <b>${best >= 0 ? pts[best].toFixed(1) : '—'}</b> in Week ${best + 1}</div>
+      <div class="bars">${weeks.map((w, i) => {
+        const g = byWeek[w];
+        const label = g ? `Week ${w} · <b>${pts[i].toFixed(1)}</b> pts · ${escapeHtml(g.game)}` : `Week ${w} · did not play`;
+        return `<button type="button" data-read="${escapeHtml(label)}" aria-label="Week ${w}">${g ? `<i style="height:${Math.max(2, (Math.max(0, pts[i]) / max) * 100).toFixed(1)}%"></i>` : ''}</button>`;
+      }).join('')}</div>
+      <div class="bar-x">${weeks.map((w) => `<span>${w % 2 ? w : ''}</span>`).join('')}</div>
+    </div>`;
 }
 
 function openPlayer(id) {
@@ -846,41 +941,37 @@ function openPlayer(id) {
   const pts = fantasyPoints(p);
   const season = !!p.weekly;
   const sub = season
-    ? `${state.season} regular season · ${p.gp} GP · ${(pts / p.gp).toFixed(1)} pts/g`
-    : `${state.type === 3 ? els.week.selectedOptions[0].textContent : `Week ${state.week}`} ${state.season} · ${p.game}`;
+    ? `${state.season} regular season · ${p.gp} GP · ${(pts / p.gp).toFixed(1)} per game`
+    : `${weekLabel()}, ${state.season} · ${p.game}`;
 
-  const sheet = document.createElement('div');
-  sheet.className = 'sheet-wrap';
-  sheet.innerHTML = `
-    <div class="sheet" role="dialog" aria-modal="true">
+  const { sheet } = presentSheet(`
+    <div class="sheet-top">
+      <div class="grabber"></div>
       <div class="sheet-head">
-        ${p.headshot ? `<img src="${escapeHtml(p.headshot)}" alt="" onerror="this.remove()">` : ''}
+        ${avatar(p)}
         <div>
           <div class="name">${escapeHtml(p.name)}</div>
-          <div class="meta">${escapeHtml(p.pos)} · ${escapeHtml(p.team)}${p.jersey ? ` #${escapeHtml(p.jersey)}` : ''}</div>
+          <div class="meta">${escapeHtml(p.pos)} · ${escapeHtml(p.team)}${p.jersey ? ` · #${escapeHtml(p.jersey)}` : ''}</div>
         </div>
         <button type="button" class="close" aria-label="Close">✕</button>
       </div>
-      <div class="sheet-score">
-        <div><span class="pts-big">${pts.toFixed(1)}</span> <small>${scoringLabel()}</small></div>
-        <div class="sub">${escapeHtml(sub)}</div>
-      </div>
-      ${statSections(p)}
-      ${breakdownTable(p)}
-      ${season ? weeklyTable(p) : ''}
-    </div>`;
-  document.body.appendChild(sheet);
-  document.body.classList.add('noscroll');
-  requestAnimationFrame(() => sheet.classList.add('open'));
+    </div>
+    <div class="hero"><span class="big">${pts.toFixed(1)}</span><small>${scoringLabel()}</small></div>
+    <p class="sub">${escapeHtml(sub)}</p>
+    ${season ? weeklyChart(p) : ''}
+    ${statSections(p)}
+    ${breakdownList(p)}`, teamTint(p.teamColor));
 
-  const close = () => {
-    sheet.classList.remove('open');
-    document.body.classList.remove('noscroll');
-    setTimeout(() => sheet.remove(), 250);
-  };
-  sheet.addEventListener('click', (e) => {
-    if (e.target === sheet || e.target.closest('.close')) close();
-  });
+  const read = sheet.querySelector('.chart-read');
+  if (read) {
+    sheet.querySelector('.bars').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const on = b.classList.toggle('on');
+      sheet.querySelectorAll('.bars button.on').forEach((x) => { if (x !== b) x.classList.remove('on'); });
+      read.innerHTML = on ? b.dataset.read : read.dataset.default;
+    });
+  }
 }
 
 // ---------- pickers ----------
@@ -936,7 +1027,10 @@ async function detectCurrent() {
 
 function setTab(pos) {
   state.pos = pos;
-  els.tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.pos === pos));
+  const buttons = [...els.tabs.querySelectorAll('button')];
+  buttons.forEach((b) => b.classList.toggle('active', b.dataset.pos === pos));
+  const i = buttons.findIndex((b) => b.dataset.pos === pos);
+  els.tabs.querySelector('.tab-pill').style.transform = `translateX(${i * 100}%)`;
 }
 
 async function init() {
@@ -974,8 +1068,8 @@ async function init() {
     window.scrollTo({ top: 0 });
   });
   els.list.addEventListener('click', (e) => {
-    const card = e.target.closest('.card');
-    if (card) openPlayer(card.dataset.id);
+    const row = e.target.closest('.row[data-id]');
+    if (row) openPlayer(row.dataset.id);
   });
   els.refresh.addEventListener('click', () => { refreshLeague().then(render); showWeek(true); });
   $('settings').addEventListener('click', openSettings);

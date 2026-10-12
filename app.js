@@ -7,7 +7,7 @@ const CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl';
 
 const TOP_N = 30;
 const FIRST_SEASON = 2004;
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const STALE_MS = 15 * 60 * 1000; // auto-refetch unfinished weeks after 15 min
 
 const POSTSEASON_WEEKS = [
@@ -57,6 +57,39 @@ function pruneCache() {
     Object.keys(localStorage).filter((k) => k.startsWith('wk:')).forEach((k) => localStorage.removeItem(k));
   } catch (e) { /* ignore */ }
 }
+
+// Week data lives in IndexedDB: a full season is too big for localStorage.
+const idb = (() => {
+  let dbp;
+  function open() {
+    if (!dbp) {
+      dbp = new Promise((resolve, reject) => {
+        const req = indexedDB.open('wfs', 1);
+        req.onupgradeneeded = () => req.result.createObjectStore('kv');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+    return dbp;
+  }
+  function run(mode, fn) {
+    return open().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction('kv', mode);
+      const req = fn(tx.objectStore('kv'));
+      tx.oncomplete = () => resolve(req && req.result);
+      tx.onerror = () => reject(tx.error);
+    }));
+  }
+  return {
+    get: (k) => run('readonly', (st) => st.get(k)).catch(() => load(k)),
+    set: (k, v) => run('readwrite', (st) => st.put(v, k)).catch(() => store(k, v)),
+  };
+})();
+
+// Drop week caches from the old localStorage layout.
+try {
+  Object.keys(localStorage).filter((k) => k.startsWith('wk:')).forEach((k) => localStorage.removeItem(k));
+} catch (e) { /* ignore */ }
 
 // ---------- network ----------
 
@@ -267,7 +300,7 @@ function weekKey(season, type, week) {
   return `wk:${CACHE_VERSION}:${season}:${type}:${week}`;
 }
 
-async function fetchWeek(season, type, week, onProgress) {
+async function fetchWeek(season, type, week, onProgress = () => {}) {
   const sb = await getJSON(`${SITE}/scoreboard?dates=${season}&seasontype=${type}&week=${week}&limit=100`);
   const events = sb.events || [];
   const players = {};
@@ -287,17 +320,38 @@ async function fetchWeek(season, type, week, onProgress) {
   });
 
   const list = Object.values(players);
+  let sleeper = false;
   if (list.length) {
     onProgress(-1, 0);
     await resolvePositions(season, list);
+    onProgress(-2, 0);
+    sleeper = await attachSleeperStats(season, type, week, list);
   }
-  return { players: list, final: allFinal, games: events.length, played: started.length, fetchedAt: Date.now() };
+  return { players: list, final: allFinal, games: events.length, played: started.length, sleeper, fetchedAt: Date.now() };
+}
+
+// Cached week if fresh enough, else a fresh pull from ESPN + Sleeper.
+async function getWeek(season, type, week, force, onProgress) {
+  const key = weekKey(season, type, week);
+  const cached = await idb.get(key);
+  if (cached && !force) {
+    const stale = !cached.final && Date.now() - cached.fetchedAt > STALE_MS;
+    if (!stale) return cached;
+  }
+  const data = await fetchWeek(season, type, week, onProgress);
+  if (data.played > 0) await idb.set(key, data);
+  return data;
+}
+
+function sameView(v) {
+  return state.season === v.season && state.type === v.type && state.week === v.week;
 }
 
 async function showWeek(force = false) {
-  const { season, type, week } = state;
-  const key = weekKey(season, type, week);
-  const cached = load(key);
+  if (state.week === 'all') return showSeason(force);
+  const view = { season: state.season, type: state.type, week: state.week };
+  const key = weekKey(view.season, view.type, view.week);
+  const cached = await idb.get(key);
 
   if (cached && !force) {
     state.players = cached.players;
@@ -313,19 +367,97 @@ async function showWeek(force = false) {
   if (!cached) { state.players = []; render(); }
 
   try {
-    const data = await fetchWeek(season, type, week, (n, total) => {
-      if (n === -1) els.status.textContent = 'Looking up positions…';
-      else els.status.textContent = `Loading games ${n}/${total}…`;
+    const data = await getWeek(view.season, view.type, view.week, true, (n, total) => {
+      if (!sameView(view)) return;
+      els.status.textContent = n === -1 ? 'Looking up positions…'
+        : n === -2 ? 'Getting Sleeper stats…'
+          : `Loading games ${n}/${total}…`;
     });
     // User may have switched weeks while we were loading.
-    if (state.season === season && state.type === type && state.week === week) {
+    if (sameView(view)) {
       state.players = data.players;
       render();
       setStatus(data);
     }
-    if (data.played > 0) store(key, data);
   } catch (err) {
-    els.status.innerHTML = `<span class="err">Couldn't reach ESPN (${escapeHtml(err.message)}). Tap Refresh to retry.</span>`;
+    if (sameView(view)) els.status.innerHTML = `<span class="err">Couldn't reach ESPN (${escapeHtml(err.message)}). Tap Refresh to retry.</span>`;
+  } finally {
+    state.loading = false;
+    els.refresh.classList.remove('spinning');
+  }
+}
+
+// ---------- full season ----------
+
+function regularWeeks(season) {
+  return season >= 2021 ? 18 : 17;
+}
+
+const SUM_FIELDS = ['cmp', 'att', 'passYds', 'passTD', 'int', 'sacks', 'car', 'rushYds', 'rushTD',
+  'rec', 'tgt', 'recYds', 'recTD', 'fum', 'fumLost'];
+
+// Season totals: counting stats summed, points summed week by week so
+// per-game bonuses (100-yard games etc.) are scored the way Sleeper does.
+function aggregateSeason(weeks) {
+  const out = {};
+  weeks.forEach((wk) => {
+    (wk.players || []).forEach((p) => {
+      let t = out[p.id];
+      if (!t) {
+        t = out[p.id] = { ...p, game: '', gp: 0, pts: 0, rtg: null, qbr: null, sl: null, weekly: [] };
+        SUM_FIELDS.forEach((f) => { t[f] = 0; });
+      }
+      SUM_FIELDS.forEach((f) => { t[f] += p[f] || 0; });
+      t.rushLong = Math.max(t.rushLong, p.rushLong || 0);
+      t.recLong = Math.max(t.recLong, p.recLong || 0);
+      t.team = p.team; t.teamLogo = p.teamLogo || t.teamLogo; t.headshot = p.headshot || t.headshot;
+      t.gp += 1;
+      t.weekly.push(p);
+    });
+  });
+  return Object.values(out).map((t) => {
+    t.game = `· ${t.gp} GP`;
+    return t;
+  });
+}
+
+async function showSeason(force = false) {
+  const view = { season: state.season, type: state.type, week: 'all' };
+  if (state.loading) return;
+  state.loading = true;
+  els.refresh.classList.add('spinning');
+  state.players = []; render();
+
+  const total = regularWeeks(view.season);
+  const weeks = [];
+  let failed = 0, done = 0, sleeperWeeks = 0, latest = 0;
+  try {
+    await pool(Array.from({ length: total }, (_, i) => i + 1), 2, async (w) => {
+      try {
+        // A forced refresh only re-pulls weeks that weren't final yet.
+        let data = await idb.get(weekKey(view.season, 2, w));
+        if (!data || (!data.final && (force || Date.now() - data.fetchedAt > STALE_MS))) {
+          data = await getWeek(view.season, 2, w, true);
+        }
+        if (data.played > 0) {
+          weeks.push(data);
+          if (data.sleeper) sleeperWeeks++;
+          latest = Math.max(latest, data.fetchedAt);
+        }
+      } catch (e) { failed++; }
+      done++;
+      if (sameView(view)) els.status.textContent = `Loading season… week ${done}/${total}`;
+    });
+    if (sameView(view)) {
+      state.players = aggregateSeason(weeks);
+      render();
+      const when = latest ? new Date(latest).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+      let msg = `${view.season} regular season · ${weeks.length} week${weeks.length === 1 ? '' : 's'}`;
+      msg += sleeperWeeks === weeks.length && weeks.length ? ' · Sleeper points' : sleeperWeeks ? ` · Sleeper points ${sleeperWeeks}/${weeks.length} wks` : ' · box-score points';
+      if (when) msg += ` · updated ${when}`;
+      els.status.textContent = msg;
+      if (failed) els.status.innerHTML += ` <span class="err">· ${failed} week(s) failed, tap Refresh</span>`;
+    }
   } finally {
     state.loading = false;
     els.refresh.classList.remove('spinning');
@@ -337,7 +469,7 @@ function setStatus(data) {
   let msg;
   if (!data.games) msg = 'No games found for this week.';
   else if (!data.played) msg = 'No games have started yet.';
-  else msg = `${data.played}/${data.games} games${data.final ? ' · final' : ''} · updated ${when}`;
+  else msg = `${data.played}/${data.games} games${data.final ? ' · final' : ''} · ${data.sleeper ? 'Sleeper points' : 'box-score points'} · updated ${when}`;
   els.status.textContent = msg;
 }
 
@@ -402,18 +534,114 @@ function unsupportedKeys(scoring) {
     && OFFENSE_PREFIXES.some((pre) => k.startsWith(pre)) && k !== 'fum_rec' && k !== 'fum_ret_yd');
 }
 
+// ---------- Sleeper weekly stats ----------
+// Sleeper's per-player weekly stats use the same keys as its scoring
+// settings (40+ yd plays, first downs, 2-pt...), so points match Sleeper.
+
+const PLAYER_MAP_TTL = 7 * 24 * 3600 * 1000;
+const SKILL_POS = new Set(['QB', 'RB', 'FB', 'WR', 'TE']);
+
+function nameKey(name) {
+  return String(name || '').toLowerCase()
+    .replace(/\b(jr|sr|ii|iii|iv|v)\b\.?/g, '')
+    .replace(/[^a-z]/g, '');
+}
+
+let playerMapPromise = null;
+
+// ESPN id -> Sleeper id (plus a name fallback), from Sleeper's player list.
+function sleeperPlayerMap() {
+  if (!playerMapPromise) {
+    playerMapPromise = (async () => {
+      const cached = await idb.get('sleeperMap');
+      if (cached && Date.now() - cached.fetchedAt < PLAYER_MAP_TTL) return cached;
+      try {
+        const all = await getJSON(`${SLEEPER}/players/nfl`, 60000);
+        const byEspn = {}, byName = {};
+        Object.values(all || {}).forEach((pl) => {
+          if (!pl || !pl.player_id) return;
+          const pos = pl.position || (pl.fantasy_positions || [])[0];
+          if (!SKILL_POS.has(pos)) return;
+          if (pl.espn_id) byEspn[String(pl.espn_id)] = String(pl.player_id);
+          const nk = nameKey(pl.full_name || `${pl.first_name} ${pl.last_name}`);
+          if (nk) byName[`${nk}|${normPos(pos)}`] = byName[`${nk}|${normPos(pos)}`] === undefined ? String(pl.player_id) : null;
+        });
+        const map = { byEspn, byName, fetchedAt: Date.now() };
+        await idb.set('sleeperMap', map);
+        return map;
+      } catch (e) {
+        if (cached) return cached;
+        playerMapPromise = null;
+        throw e;
+      }
+    })();
+  }
+  return playerMapPromise;
+}
+
+async function fetchSleeperWeek(season, type, week) {
+  const url = type === 3
+    ? `${SLEEPER}/stats/nfl/post/${season}/${week === 5 ? 4 : week}` // ESPN skips Pro Bowl week
+    : `${SLEEPER}/stats/nfl/regular/${season}/${week}`;
+  const data = await getJSON(url, 30000);
+  const out = {};
+  if (Array.isArray(data)) {
+    data.forEach((row) => { if (row && row.player_id) out[String(row.player_id)] = row.stats || row; });
+  } else if (data && typeof data === 'object') {
+    Object.entries(data).forEach(([id, st]) => { out[id] = st; });
+  }
+  return out;
+}
+
+// Attach Sleeper's stat object as p.sl. Returns true if Sleeper data was used.
+async function attachSleeperStats(season, type, week, list) {
+  try {
+    const [map, stats] = await Promise.all([sleeperPlayerMap(), fetchSleeperWeek(season, type, week)]);
+    if (!Object.keys(stats).length) return false;
+    let hits = 0;
+    list.forEach((p) => {
+      if (!SORT_BY[p.pos]) return;
+      const sid = map.byEspn[p.id] || map.byName[`${nameKey(p.name)}|${p.pos}`];
+      const st = sid && stats[sid];
+      if (!st) return;
+      const keep = {};
+      Object.keys(st).forEach((k) => {
+        const v = st[k];
+        if (typeof v === 'number' && v !== 0 && !k.startsWith('pts_') && !k.startsWith('rank_') && !k.startsWith('pos_rank')) keep[k] = v;
+      });
+      p.sl = keep;
+      hits++;
+    });
+    return hits > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
 let league = load('league'); // { username, leagueId, name, season, scoring, fetchedAt }
 
 function scoring() {
   return (league && league.scoring) || DEFAULT_SCORING;
 }
 
+// Season rows carry their weekly lines; score each week, then sum.
 function fantasyPoints(p) {
+  if (p.weekly) return p.weekly.reduce((sum, w) => sum + fantasyPoints(w), 0);
   const sc = scoring();
   let pts = 0;
   for (const k in sc) {
+    const w = sc[k];
+    if (!w) continue;
     const fn = SCORING_STATS[k];
-    if (fn && sc[k]) pts += fn(p) * sc[k];
+    let v = 0;
+    if (p.sl) {
+      // Sleeper omits zeros; fill in game bonuses it may not list from the box score.
+      if (k in p.sl) v = p.sl[k];
+      else if (fn && k.startsWith('bonus_')) v = fn(p);
+    } else if (fn) {
+      v = fn(p);
+    }
+    pts += v * w;
   }
   return Math.round(pts * 100) / 100;
 }
@@ -480,7 +708,7 @@ function openSettings() {
       <div class="league-list"></div>
       <h3>Scoring in use</h3>
       <table class="cmp scoring">${used.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${v > 0 ? '+' : ''}${v}</td></tr>`).join('')}</table>
-      ${unsupported.length ? `<p class="sub">Not in ESPN box scores, so not counted: ${unsupported.map(escapeHtml).join(', ')}. Points may run slightly under Sleeper's.</p>` : ''}
+      <p class="sub">Points use Sleeper's own weekly stats, so they should match Sleeper.${unsupported.length ? ` If Sleeper's stats can't be loaded, the app falls back to ESPN box scores, which can't count: ${unsupported.map(escapeHtml).join(', ')}.` : ''}</p>
     </div>`;
   document.body.appendChild(sheet);
   document.body.classList.add('noscroll');
@@ -555,7 +783,7 @@ function render() {
       </div>
       <div class="info">
         <div class="name">${escapeHtml(p.name)}</div>
-        <div class="meta">${escapeHtml(p.team)} ${escapeHtml(p.game)}</div>
+        <div class="meta">${escapeHtml(p.team)} ${escapeHtml(p.game)}${p.weekly ? ` · ${(pts / p.gp).toFixed(1)}/g` : ''}</div>
         ${statLines(p).map(([k, v]) => `<div class="line"><b>${k}</b> ${escapeHtml(v)}</div>`).join('')}
       </div>
       <div class="big">
@@ -707,8 +935,9 @@ function fillSeasons(current) {
 }
 
 function fillWeeks(season) {
-  const regWeeks = season >= 2021 ? 18 : 17;
+  const regWeeks = regularWeeks(season);
   els.week.innerHTML = '';
+  els.week.appendChild(new Option('Full Season', '2-all'));
   const reg = document.createElement('optgroup');
   reg.label = 'Regular Season';
   for (let w = 1; w <= regWeeks; w++) reg.appendChild(new Option(`Week ${w}`, `2-${w}`));
@@ -772,8 +1001,9 @@ async function init() {
     showWeek();
   });
   els.week.addEventListener('change', () => {
-    const [t, w] = els.week.value.split('-').map(Number);
-    state.type = t; state.week = w;
+    const [t, w] = els.week.value.split('-');
+    state.type = Number(t);
+    state.week = w === 'all' ? 'all' : Number(w);
     savePrefs();
     showWeek();
   });

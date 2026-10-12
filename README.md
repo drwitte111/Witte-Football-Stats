@@ -10,9 +10,18 @@ Tap the gear, enter your Sleeper username, and the app links the league named
 `scoring_settings`. Until a league is linked it uses standard PPR. Refresh also
 re-pulls the league's scoring.
 
-Points are computed from ESPN box scores, so settings a box score can't
-answer (2-pt conversions, first downs, long-play TD bonuses, return TDs) are
-skipped; the settings sheet lists any your league uses.
+Points come from Sleeper's own weekly player stats (40+ yard plays, first
+downs, 2-pt conversions and all), so they should match Sleeper. If Sleeper's
+stats can't be loaded for a week or a player, the app falls back to scoring the
+ESPN box score, which can't see those extras. The status line says which source
+a week used.
+
+## Full Season
+
+The first option in the Week picker totals every regular-season week: summed
+stat lines, games played, and points scored week by week (so per-game bonuses
+count correctly), with points per game. The first load downloads every game of
+the season; finished weeks are saved on the phone, so later loads are quick.
 
 Tap a player to compare their regular-season totals for the selected season
 against the previous season. Counting stats also show a per-game rate, and the
@@ -43,4 +52,5 @@ Unfinished weeks also refetch on their own once the cache is 15 minutes old.
 - `site.api.espn.com/.../nfl/summary?event=ID` — box score per game
 - `site.api.espn.com/.../nfl/teams/ID/roster` and `sports.core.api.espn.com/.../athletes/ID` — player positions (cached)
 - `api.sleeper.app/v1/user/NAME`, `.../user/ID/leagues/nfl/YYYY`, `.../league/ID` — league scoring
+- `api.sleeper.app/v1/stats/nfl/regular/YYYY/WEEK` and `.../players/nfl` — weekly stats for points (unofficial endpoint)
 - `site.web.api.espn.com/apis/common/v3/.../athletes/ID/stats` — season totals for the player sheet

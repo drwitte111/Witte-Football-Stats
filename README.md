@@ -1,7 +1,7 @@
 # Witte Football Stats
 
-Weekly NFL leaders for the phone. Pick a season and week, then see the top 30
-QBs, RBs, WRs and TEs with full stat lines, ranked by fantasy points.
+Weekly NFL leaders for the phone. Pick a season and week, then see every
+QB, RB, WR and TE who scored fantasy points, ranked by points.
 
 ## Fantasy scoring
 

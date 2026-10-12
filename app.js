@@ -4,7 +4,6 @@
 const SITE = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl';
 const CORE = 'https://sports.core.api.espn.com/v2/sports/football/leagues/nfl';
 
-const TOP_N = 30;
 const FIRST_SEASON = 2004;
 const CACHE_VERSION = 2;
 const STALE_MS = 15 * 60 * 1000; // auto-refetch unfinished weeks after 15 min
@@ -786,7 +785,7 @@ function render() {
     .filter((p) => p.pos === state.pos)
     .map((p) => ({ p, pts: fantasyPoints(p) }))
     .sort((a, b) => b.pts - a.pts || b.p[yards.key] - a.p[yards.key])
-    .slice(0, TOP_N);
+    .filter(({ pts }) => Math.abs(pts) > 0.001);
 
   if (!rows.length) {
     els.list.innerHTML = state.loading ? skeleton() : state.players.length ? '<p class="empty">No stats yet.</p>' : '';

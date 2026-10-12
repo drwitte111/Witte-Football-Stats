@@ -38,11 +38,19 @@ Unfinished weeks also refetch on their own once the cache is 15 minutes old.
 2. After a minute, open `https://<user>.github.io/<repo>/` in Safari.
 3. Share → **Add to Home Screen**. It opens full-screen like an app.
 
+## Updates
+
+The app updates itself. `sw.js` fetches the latest files on every launch
+(falling back to a saved copy offline), and when the app returns to the
+foreground it checks `index.html` for a newer `app.js?v=` tag and reloads.
+Bump the `?v=` tags in `index.html` with every release.
+
 ## Files
 
 - `index.html` — page shell and home-screen meta tags
 - `app.js` — ESPN fetching, stat parsing, ranking, player sheet
 - `styles.css` — dark, iPhone-first layout
+- `sw.js` — network-first service worker (self-updating, offline fallback)
 - `manifest.webmanifest`, `icons/` — home-screen app name and icon
 
 ## ESPN endpoints used

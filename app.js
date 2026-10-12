@@ -1077,6 +1077,41 @@ async function init() {
   showWeek();
 }
 
+// ---------- self-updating ----------
+
+// The ?v= tag on this script, as loaded. index.html carries the newest tag.
+const LOADED_VERSION = (() => {
+  const src = (document.currentScript && document.currentScript.src) || '';
+  return (src.match(/[?&]v=([^&]+)/) || [])[1] || '';
+})();
+
+let lastUpdateCheck = 0;
+
+// Home-screen apps resume instead of relaunching, so check for a new
+// deploy whenever the app comes back to the foreground.
+async function checkForUpdate() {
+  if (!LOADED_VERSION || Date.now() - lastUpdateCheck < 30 * 1000) return;
+  lastUpdateCheck = Date.now();
+  try {
+    const res = await fetch(`./?check=${Date.now()}`, { cache: 'no-store' });
+    const html = await res.text();
+    const latest = (html.match(/app\.js\?v=([^"'&]+)/) || [])[1];
+    if (latest && latest !== LOADED_VERSION && !(document.activeElement && document.activeElement.matches('input'))) {
+      location.reload();
+    }
+  } catch (e) { /* offline: keep running the saved copy */ }
+}
+
+function setupUpdates() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkForUpdate();
+  });
+}
+
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.getElementById('list')) {
+  setupUpdates();
   init();
 }

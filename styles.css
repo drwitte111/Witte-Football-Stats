@@ -164,3 +164,24 @@ h1 { font-size: 22px; margin: 0; letter-spacing: -0.3px; }
 .cmp td small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
 .cmp td.up { color: var(--good); }
 .cmp td.down { color: var(--bad); }
+
+/* ---------- scoring settings ---------- */
+
+.actions { display: flex; gap: 8px; align-items: center; }
+.icon-btn {
+  border: 0; background: var(--panel-2); color: var(--text);
+  width: 36px; height: 36px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.link-form { display: flex; gap: 8px; align-items: stretch; margin-top: 14px; }
+.link-form .picker { flex: 1; }
+.link-form input {
+  background: transparent; color: var(--text); border: 0; outline: 0;
+  font: 600 16px/1.2 inherit; font-family: inherit; padding: 0; width: 100%;
+}
+.league {
+  display: block; width: 100%; text-align: left; margin-top: 6px;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px; font: 600 15px/1.2 inherit; font-family: inherit;
+}
+.cmp.scoring th { font-family: ui-monospace, Menlo, monospace; font-size: 12px; width: auto; }

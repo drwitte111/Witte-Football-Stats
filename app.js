@@ -347,11 +347,178 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-function fantasyPPR(p) {
-  return p.passYds / 25 + p.passTD * 4 - p.int * 2
-    + p.rushYds / 10 + p.rushTD * 6
-    + p.rec + p.recYds / 10 + p.recTD * 6
-    - p.fumLost * 2;
+// ---------- fantasy scoring (Sleeper league settings) ----------
+
+const SLEEPER = 'https://api.sleeper.app/v1';
+const LEAGUE_NAME = 'the league';
+
+// Used until a Sleeper league is linked.
+const DEFAULT_SCORING = {
+  pass_yd: 0.04, pass_td: 4, pass_int: -2,
+  rush_yd: 0.1, rush_td: 6,
+  rec: 1, rec_yd: 0.1, rec_td: 6,
+  fum_lost: -2,
+};
+
+// Sleeper scoring keys we can compute from an ESPN box score.
+const SCORING_STATS = {
+  pass_yd: (p) => p.passYds,
+  pass_td: (p) => p.passTD,
+  pass_int: (p) => p.int,
+  pass_cmp: (p) => p.cmp,
+  pass_att: (p) => p.att,
+  pass_inc: (p) => p.att - p.cmp,
+  pass_sack: (p) => p.sacks,
+  rush_yd: (p) => p.rushYds,
+  rush_td: (p) => p.rushTD,
+  rush_att: (p) => p.car,
+  rec: (p) => p.rec,
+  rec_yd: (p) => p.recYds,
+  rec_td: (p) => p.recTD,
+  rec_tgt: (p) => p.tgt,
+  fum: (p) => p.fum,
+  fum_lost: (p) => p.fumLost,
+  bonus_rec_te: (p) => (p.pos === 'TE' ? p.rec : 0),
+  bonus_rec_rb: (p) => (p.pos === 'RB' ? p.rec : 0),
+  bonus_rec_wr: (p) => (p.pos === 'WR' ? p.rec : 0),
+  bonus_pass_yd_300: (p) => (p.passYds >= 300 ? 1 : 0),
+  bonus_pass_yd_400: (p) => (p.passYds >= 400 ? 1 : 0),
+  bonus_rush_yd_100: (p) => (p.rushYds >= 100 ? 1 : 0),
+  bonus_rush_yd_200: (p) => (p.rushYds >= 200 ? 1 : 0),
+  bonus_rec_yd_100: (p) => (p.recYds >= 100 ? 1 : 0),
+  bonus_rec_yd_200: (p) => (p.recYds >= 200 ? 1 : 0),
+  bonus_rush_rec_yd_100: (p) => (p.rushYds + p.recYds >= 100 ? 1 : 0),
+  bonus_rush_rec_yd_200: (p) => (p.rushYds + p.recYds >= 200 ? 1 : 0),
+  bonus_pass_cmp_25: (p) => (p.cmp >= 25 ? 1 : 0),
+  bonus_rush_att_20: (p) => (p.car >= 20 ? 1 : 0),
+  bonus_rec_rec_10: (p) => (p.rec >= 10 ? 1 : 0),
+};
+
+// Offensive-player keys a box score can't answer (2-pt tries, first downs,
+// play lengths, return TDs...). Defense/kicker keys are ignored entirely.
+const OFFENSE_PREFIXES = ['pass_', 'rush_', 'rec', 'bonus_pass', 'bonus_rush', 'bonus_rec', 'fum'];
+function unsupportedKeys(scoring) {
+  return Object.keys(scoring).filter((k) => scoring[k] && !SCORING_STATS[k]
+    && OFFENSE_PREFIXES.some((pre) => k.startsWith(pre)) && k !== 'fum_rec' && k !== 'fum_ret_yd');
+}
+
+let league = load('league'); // { username, leagueId, name, season, scoring, fetchedAt }
+
+function scoring() {
+  return (league && league.scoring) || DEFAULT_SCORING;
+}
+
+function fantasyPoints(p) {
+  const sc = scoring();
+  let pts = 0;
+  for (const k in sc) {
+    const fn = SCORING_STATS[k];
+    if (fn && sc[k]) pts += fn(p) * sc[k];
+  }
+  return Math.round(pts * 100) / 100;
+}
+
+function scoringLabel() {
+  return league ? 'PTS' : 'PPR';
+}
+
+async function sleeperLeagues(username) {
+  const user = await getJSON(`${SLEEPER}/user/${encodeURIComponent(username.trim())}`);
+  if (!user || !user.user_id) throw new Error(`No Sleeper user "${username}"`);
+  const st = await getJSON(`${SLEEPER}/state/nfl`).catch(() => ({}));
+  let season = parseInt(st.league_season || st.season, 10) || new Date().getFullYear();
+  let leagues = await getJSON(`${SLEEPER}/user/${user.user_id}/leagues/nfl/${season}`);
+  if (!leagues || !leagues.length) {
+    season -= 1;
+    leagues = await getJSON(`${SLEEPER}/user/${user.user_id}/leagues/nfl/${season}`);
+  }
+  return { season, leagues: leagues || [] };
+}
+
+function linkLeague(username, lg, season) {
+  league = {
+    username: username.trim(),
+    leagueId: lg.league_id,
+    name: lg.name,
+    season,
+    scoring: lg.scoring_settings || {},
+    fetchedAt: Date.now(),
+  };
+  store('league', league);
+}
+
+// Re-pull the linked league's scoring in case the commish changed it.
+async function refreshLeague() {
+  if (!league || !league.leagueId) return;
+  try {
+    const lg = await getJSON(`${SLEEPER}/league/${league.leagueId}`);
+    if (lg && lg.scoring_settings) linkLeague(league.username, lg, league.season);
+  } catch (e) { /* keep cached scoring */ }
+}
+
+function openSettings() {
+  const sheet = document.createElement('div');
+  sheet.className = 'sheet-wrap';
+  const unsupported = league ? unsupportedKeys(league.scoring) : [];
+  const used = Object.entries(scoring()).filter(([k, v]) => v && SCORING_STATS[k]);
+  sheet.innerHTML = `
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-head">
+        <div>
+          <div class="name">Fantasy scoring</div>
+          <div class="meta">${league ? `Sleeper · ${escapeHtml(league.name)} (${league.season})` : 'Standard PPR until a Sleeper league is linked'}</div>
+        </div>
+        <button type="button" class="close" aria-label="Close">✕</button>
+      </div>
+      <form class="link-form">
+        <label class="picker"><span>Sleeper username</span>
+          <input name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"
+            value="${escapeHtml(league ? league.username : '')}" placeholder="your Sleeper username">
+        </label>
+        <button type="submit" class="refresh">Find leagues</button>
+      </form>
+      <div class="league-list"></div>
+      <h3>Scoring in use</h3>
+      <table class="cmp scoring">${used.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${v > 0 ? '+' : ''}${v}</td></tr>`).join('')}</table>
+      ${unsupported.length ? `<p class="sub">Not in ESPN box scores, so not counted: ${unsupported.map(escapeHtml).join(', ')}. Points may run slightly under Sleeper's.</p>` : ''}
+    </div>`;
+  document.body.appendChild(sheet);
+  document.body.classList.add('noscroll');
+  requestAnimationFrame(() => sheet.classList.add('open'));
+
+  const close = () => {
+    sheet.classList.remove('open');
+    document.body.classList.remove('noscroll');
+    setTimeout(() => sheet.remove(), 250);
+  };
+  sheet.addEventListener('click', (e) => {
+    if (e.target === sheet || e.target.closest('.close')) close();
+  });
+
+  const listEl = sheet.querySelector('.league-list');
+  sheet.querySelector('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = e.target.username.value;
+    if (!username.trim()) return;
+    listEl.innerHTML = '<p class="sub">Looking up leagues…</p>';
+    try {
+      const { season, leagues } = await sleeperLeagues(username);
+      if (!leagues.length) { listEl.innerHTML = `<p class="sub err">No NFL leagues for ${season}.</p>`; return; }
+      const pick = (lg) => {
+        linkLeague(username, lg, season);
+        close();
+        render();
+        openSettings();
+      };
+      const match = leagues.find((lg) => String(lg.name).trim().toLowerCase() === LEAGUE_NAME);
+      if (match) { pick(match); return; }
+      listEl.innerHTML = `<p class="sub">No league named "The League" — pick one:</p>` + leagues.map((lg, i) =>
+        `<button type="button" class="league" data-i="${i}">${escapeHtml(lg.name)}</button>`).join('');
+      listEl.querySelectorAll('.league').forEach((b) => b.addEventListener('click', () => pick(leagues[b.dataset.i])));
+    } catch (err) {
+      listEl.innerHTML = `<p class="sub err">Couldn't reach Sleeper (${escapeHtml(err.message)}).</p>`;
+    }
+  });
 }
 
 function statLines(p) {
@@ -367,10 +534,11 @@ function statLines(p) {
 }
 
 function render() {
-  const sort = SORT_BY[state.pos];
+  const yards = SORT_BY[state.pos];
   const rows = state.players
     .filter((p) => p.pos === state.pos)
-    .sort((a, b) => b[sort.key] - a[sort.key] || fantasyPPR(b) - fantasyPPR(a))
+    .map((p) => ({ p, pts: fantasyPoints(p) }))
+    .sort((a, b) => b.pts - a.pts || b.p[yards.key] - a.p[yards.key])
     .slice(0, TOP_N);
 
   if (!rows.length) {
@@ -378,7 +546,7 @@ function render() {
     return;
   }
 
-  els.list.innerHTML = rows.map((p, i) => `
+  els.list.innerHTML = rows.map(({ p, pts }, i) => `
     <button type="button" class="card" data-id="${escapeHtml(p.id)}">
       <div class="rank">${i + 1}</div>
       <div class="pic">
@@ -391,9 +559,9 @@ function render() {
         ${statLines(p).map(([k, v]) => `<div class="line"><b>${k}</b> ${escapeHtml(v)}</div>`).join('')}
       </div>
       <div class="big">
-        <div class="yds">${p[sort.key]}</div>
-        <div class="lbl">${sort.label}</div>
-        <div class="fp">${fantasyPPR(p).toFixed(1)} <small>PPR</small></div>
+        <div class="yds">${pts.toFixed(1)}</div>
+        <div class="lbl">${scoringLabel()}</div>
+        <div class="fp">${p[yards.key]} <small>${yards.label}</small></div>
       </div>
     </button>`).join('');
 }
@@ -621,7 +789,9 @@ async function init() {
     const card = e.target.closest('.card');
     if (card) openPlayer(card.dataset.id);
   });
-  els.refresh.addEventListener('click', () => showWeek(true));
+  els.refresh.addEventListener('click', () => { refreshLeague().then(render); showWeek(true); });
+  $('settings').addEventListener('click', openSettings);
+  if (!league) openSettings();
 
   showWeek();
 }

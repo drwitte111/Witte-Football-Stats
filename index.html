@@ -12,7 +12,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
   <header class="top">
@@ -21,6 +21,11 @@
         <div class="eyebrow" id="eyebrow">Fantasy Leaders</div>
         <h1 id="title">Leaders</h1>
       </div>
+      <button id="watch" class="icon-btn" type="button" aria-label="Multiview">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="currentColor" d="M3 4h8v7H3zM13 4h8v7h-8zM3 13h8v7H3zM13 13h8v7h-8z"/>
+        </svg>
+      </button>
       <button id="settings" class="icon-btn" type="button" aria-label="Fantasy scoring settings">
         <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
           <path fill="currentColor" d="M19.14 12.94a7.1 7.1 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.49.42l-.36 2.54a7 7 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.68 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.1 7.1 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.04.24.25.42.49.42h3.84c.24 0 .45-.18.49-.42l.36-2.54a7 7 0 0 0 1.62-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/>
@@ -55,6 +60,16 @@
     <button type="button" role="tab" data-pos="TE">TE</button>
   </nav>
 
-  <script src="app.js?v=7"></script>
+  <section id="multiview" class="mv" hidden>
+    <div class="mv-bar">
+      <button type="button" class="mv-clear-all">Clear all</button>
+      <div class="mv-title">Multiview</div>
+      <button type="button" class="mv-done">Done</button>
+    </div>
+    <div class="mv-grid"></div>
+  </section>
+
+  <script src="app.js?v=9"></script>
+  <script src="multiview.js?v=9"></script>
 </body>
 </html>

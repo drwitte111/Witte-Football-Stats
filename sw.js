@@ -1,7 +1,7 @@
 // Network-first service worker: always try for the latest app files, fall
 // back to the saved copy offline. ESPN/Sleeper requests pass straight through.
 const CACHE = 'wfs-shell';
-const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png'];
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'multiview.js', 'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

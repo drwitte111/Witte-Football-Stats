@@ -38,6 +38,15 @@ Unfinished weeks also refetch on their own once the cache is 15 minutes old.
 2. After a minute, open `https://<user>.github.io/<repo>/` in Safari.
 3. Share → **Add to Home Screen**. It opens full-screen like an app.
 
+## Multiview
+
+The grid button in the header opens an 8-box multiview (2×4 in portrait,
+4×2 in landscape). Paste any link into a box and it shows that page; links are
+saved on the phone. YouTube and Twitch links are switched to their embeddable
+players, muted. Each box's ••• menu has full screen, reload, change link, open
+in Safari and clear. Boxes are sandboxed: pages can't open pop-ups or redirect
+the app. Sites that refuse to be embedded show blank — use Open in Safari.
+
 ## Updates
 
 The app updates itself. `sw.js` fetches the latest files on every launch
@@ -50,6 +59,7 @@ Bump the `?v=` tags in `index.html` with every release.
 - `index.html` — page shell and home-screen meta tags
 - `app.js` — ESPN fetching, stat parsing, ranking, player sheet
 - `styles.css` — dark, iPhone-first layout
+- `multiview.js` — 8-box paste-a-link grid
 - `sw.js` — network-first service worker (self-updating, offline fallback)
 - `manifest.webmanifest`, `icons/` — home-screen app name and icon
 

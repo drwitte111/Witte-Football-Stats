@@ -79,7 +79,7 @@ h1 { font-size: 34px; line-height: 1.1; font-weight: 800; letter-spacing: -0.6px
 .chip select {
   appearance: none; -webkit-appearance: none;
   background: transparent; color: inherit; border: 0; outline: 0;
-  font: 600 15px/1 inherit; font-family: inherit; padding: 0; width: 100%;
+  font: 600 15px/1 -apple-system, system-ui, sans-serif; font-family: inherit; padding: 0; width: 100%;
   height: 100%;
 }
 
@@ -197,7 +197,7 @@ h1 { font-size: 34px; line-height: 1.1; font-weight: 800; letter-spacing: -0.6px
 .tabs button {
   position: relative;
   border: 0; background: transparent; color: var(--text-2);
-  font: 700 15px/1 inherit; font-family: inherit; letter-spacing: 0.3px;
+  font: 700 15px/1 -apple-system, system-ui, sans-serif; font-family: inherit; letter-spacing: 0.3px;
   height: 42px; border-radius: 999px;
   transition: color 0.2s;
 }
@@ -310,15 +310,96 @@ h1 { font-size: 34px; line-height: 1.1; font-weight: 800; letter-spacing: -0.6px
 .field span { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.5px; }
 .field input {
   background: transparent; color: var(--text); border: 0; outline: 0;
-  font: 600 17px/1.2 inherit; font-family: inherit; padding: 0; width: 100%;
+  font: 600 17px/1.2 -apple-system, system-ui, sans-serif; font-family: inherit; padding: 0; width: 100%;
 }
 .btn {
   border: 0; border-radius: 12px; background: var(--accent); color: #fff;
-  font: 600 16px/1 inherit; font-family: inherit; padding: 0 16px;
+  font: 600 16px/1 -apple-system, system-ui, sans-serif; font-family: inherit; padding: 0 16px;
 }
 .btn:active { opacity: 0.7; }
 .league {
   display: block; width: 100%; text-align: left; margin-top: 8px;
   background: var(--surface-2); color: var(--text); border: 0;
-  border-radius: 12px; padding: 14px; font: 600 16px/1.2 inherit; font-family: inherit;
+  border-radius: 12px; padding: 14px; font: 600 16px/1.2 -apple-system, system-ui, sans-serif; font-family: inherit;
 }
+
+/* ---------- multiview ---------- */
+
+.mv {
+  position: fixed; inset: 0; z-index: 60;
+  background: #000;
+  display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.mv[hidden] { display: none; }
+.mv-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 44px; padding: 0 12px; flex: none;
+}
+.mv-title { font-weight: 700; font-size: 17px; }
+.mv-bar button {
+  border: 0; background: transparent; color: var(--accent);
+  font: 600 16px/1 -apple-system, system-ui, sans-serif; font-family: inherit; padding: 8px 4px;
+}
+.mv-bar .mv-clear-all { color: var(--text-2); font-weight: 500; }
+
+.mv-grid {
+  flex: 1; min-height: 0;
+  display: grid; gap: 3px; padding: 0 3px 3px;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+}
+@media (orientation: landscape) {
+  .mv-grid { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); }
+  .mv-bar { height: 34px; }
+}
+.mv-grid.solo { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.mv-grid.solo .mv-box:not(.on) { display: none; }
+
+.mv-box {
+  position: relative; min-width: 0; min-height: 0;
+  background: var(--surface); border-radius: 8px; overflow: hidden;
+}
+.mv-box iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
+
+.mv-add {
+  width: 100%; height: 100%; border: 1.5px dashed var(--surface-3); border-radius: 8px;
+  background: transparent; color: var(--text-2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+}
+.mv-add span { font-size: 30px; font-weight: 300; line-height: 1; color: var(--text); }
+.mv-add small { font-size: 11px; }
+.mv-add:active { background: var(--surface-2); }
+
+.mv-more {
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  border: 0; border-radius: 999px; padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.6); color: #fff;
+  font-size: 11px; font-weight: 800; letter-spacing: 1px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+
+.mv-pop {
+  position: absolute; inset: 0; z-index: 3;
+  background: rgba(28, 28, 30, 0.94);
+  display: flex; align-items: center; justify-content: center;
+  padding: 8px; overflow-y: auto;
+}
+.mv-form { width: 100%; }
+.mv-form input {
+  width: 100%; border: 0; outline: 0; border-radius: 8px;
+  background: var(--surface-3); color: var(--text);
+  font: 16px/1.2 -apple-system, system-ui, sans-serif; font-family: inherit; padding: 9px 10px;
+}
+.mv-actions { display: flex; gap: 4px; margin-top: 6px; }
+.mv-actions button, .mv-menu button, .mv-menu a {
+  flex: 1; border: 0; border-radius: 8px;
+  background: var(--surface-2); color: var(--text);
+  font: 600 13px/1 -apple-system, system-ui, sans-serif; font-family: inherit; padding: 9px 4px; text-align: center; text-decoration: none;
+}
+.mv-actions .go { background: var(--accent); color: #fff; }
+.mv-err { color: var(--bad); font-size: 12px; margin: 6px 0 0; }
+.mv-menu { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.mv-menu button, .mv-menu a { padding: 8px 4px; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.mv-host { grid-column: 1 / -1; font-size: 11px; color: var(--text-2); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mv-menu .danger { color: var(--bad); }

@@ -11,6 +11,10 @@
   const PORTRAIT = [null, [1, 1], [1, 2], [1, 3], [2, 2], [2, 3], [2, 3], [2, 4], [2, 4], [3, 3], [3, 4], [3, 4], [3, 4]];
   const LANDSCAPE = [null, [1, 1], [2, 1], [3, 1], [2, 2], [3, 2], [3, 2], [4, 2], [4, 2], [3, 3], [4, 3], [4, 3], [4, 3]];
   const SANDBOX = 'allow-scripts allow-same-origin allow-presentation allow-forms';
+  // Per-box opt-in: pop-ups (new tabs) allowed, and the page may navigate the
+  // app only right after you tap inside it.
+  const SANDBOX_POPUPS = `${SANDBOX} allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation`;
+  const POPUP_KEY = 'multiviewPopups';
 
   const root = document.getElementById('multiview');
   const grid = root.querySelector('.mv-grid');
@@ -25,7 +29,12 @@
   }
   const landscape = window.matchMedia('(orientation: landscape)');
 
+  let popups = [];
+  try { popups = JSON.parse(localStorage.getItem(POPUP_KEY)) || []; } catch (e) { popups = []; }
+  popups = Array.from({ length: MAX }, (_, i) => !!popups[i]);
+
   function save() {
+    try { localStorage.setItem(POPUP_KEY, JSON.stringify(popups)); } catch (e) { /* ignore */ }
     try { localStorage.setItem(KEY, JSON.stringify(links)); } catch (e) { /* ignore */ }
   }
 
@@ -73,8 +82,9 @@
       return `<button type="button" class="mv-add" data-act="edit"><span>+</span><small>Box ${i + 1}</small></button>`;
     }
     return `
-      <iframe src="${esc(embedUrl(href))}" sandbox="${SANDBOX}" referrerpolicy="no-referrer"
+      <iframe src="${esc(embedUrl(href))}" sandbox="${popups[i] ? SANDBOX_POPUPS : SANDBOX}" referrerpolicy="no-referrer"
         allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen loading="lazy" title="Box ${i + 1}"></iframe>
+      ${popups[i] ? '<span class="mv-badge">Pop-ups on</span>' : ''}
       <button type="button" class="mv-more" data-act="menu" aria-label="Box ${i + 1} options">•••</button>`;
   }
 
@@ -168,6 +178,9 @@
         <button type="button" data-act="reload">Reload</button>
         <button type="button" data-act="edit">Change link</button>
         <a href="${esc(links[i])}" target="_blank" rel="noopener noreferrer">Open in Safari</a>
+        <button type="button" data-act="popups" class="mv-toggle${popups[i] ? ' on' : ''}" aria-pressed="${popups[i]}">
+          Allow pop-ups <i></i>
+        </button>
         <button type="button" data-act="clear" class="danger">Clear</button>
         <button type="button" data-act="cancel">Close</button>
       </div>`);
@@ -183,7 +196,8 @@
     else if (act === 'menu') menuBox(i);
     else if (act === 'cancel') closeOverlay();
     else if (act === 'reload') { closeOverlay(); renderBox(i); }
-    else if (act === 'clear') { links[i] = ''; save(); renderBox(i); if (grid.querySelector('.mv-box.on')) setSolo(null); }
+    else if (act === 'popups') { popups[i] = !popups[i]; save(); renderBox(i); }
+    else if (act === 'clear') { links[i] = ''; popups[i] = false; save(); renderBox(i); if (grid.querySelector('.mv-box.on')) setSolo(null); }
     else if (act === 'solo') { closeOverlay(); setSolo(grid.classList.contains('solo') ? null : i); }
   });
 
@@ -209,7 +223,7 @@
   root.querySelector('.mv-done').addEventListener('click', close);
   root.querySelector('.mv-clear-all').addEventListener('click', () => {
     if (!links.some(Boolean) || !confirm('Clear every box?')) return;
-    links = links.map(() => ''); save(); setSolo(null);
+    links = links.map(() => ''); popups = popups.map(() => false); save(); setSolo(null);
     [...grid.children].forEach((_, i) => renderBox(i));
   });
   root.querySelector('.mv-stepper').addEventListener('click', (e) => {

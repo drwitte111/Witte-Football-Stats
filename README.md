@@ -45,7 +45,9 @@ picks 1–12 boxes, and the grid rearranges to fit in portrait and landscape. Pa
 saved on the phone. YouTube and Twitch links are switched to their embeddable
 players, muted. Each box's ••• menu has full screen, reload, change link, open
 in Safari and clear. Boxes are sandboxed: pages can't open pop-ups or redirect
-the app. Sites that refuse to be embedded show blank — use Open in Safari.
+the app. A box's **Allow pop-ups** switch lifts that for that box only (new
+tabs allowed, and the page can navigate the app right after you tap in it);
+those boxes are marked "Pop-ups on". Sites that refuse to be embedded show blank — use Open in Safari.
 
 ## Updates
 

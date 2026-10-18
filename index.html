@@ -12,7 +12,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="icon" type="image/png" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
   <header class="top">
@@ -63,13 +63,17 @@
   <section id="multiview" class="mv" hidden>
     <div class="mv-bar">
       <button type="button" class="mv-clear-all">Clear all</button>
-      <div class="mv-title">Multiview</div>
+      <div class="mv-stepper">
+        <button type="button" data-step="-1" aria-label="Fewer boxes">−</button>
+        <span class="mv-count">4 boxes</span>
+        <button type="button" data-step="1" aria-label="More boxes">+</button>
+      </div>
       <button type="button" class="mv-done">Done</button>
     </div>
     <div class="mv-grid"></div>
   </section>
 
-  <script src="app.js?v=9"></script>
-  <script src="multiview.js?v=9"></script>
+  <script src="app.js?v=10"></script>
+  <script src="multiview.js?v=10"></script>
 </body>
 </html>

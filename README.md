@@ -40,8 +40,8 @@ Unfinished weeks also refetch on their own once the cache is 15 minutes old.
 
 ## Multiview
 
-The grid button in the header opens an 8-box multiview (2×4 in portrait,
-4×2 in landscape). Paste any link into a box and it shows that page; links are
+The grid button in the header opens a multiview. The − / + control at the top
+picks 1–12 boxes, and the grid rearranges to fit in portrait and landscape. Paste any link into a box and it shows that page; links are
 saved on the phone. YouTube and Twitch links are switched to their embeddable
 players, muted. Each box's ••• menu has full screen, reload, change link, open
 in Safari and clear. Boxes are sandboxed: pages can't open pop-ups or redirect
@@ -59,7 +59,7 @@ Bump the `?v=` tags in `index.html` with every release.
 - `index.html` — page shell and home-screen meta tags
 - `app.js` — ESPN fetching, stat parsing, ranking, player sheet
 - `styles.css` — dark, iPhone-first layout
-- `multiview.js` — 8-box paste-a-link grid
+- `multiview.js` — 1–12 box paste-a-link grid
 - `sw.js` — network-first service worker (self-updating, offline fallback)
 - `manifest.webmanifest`, `icons/` — home-screen app name and icon
 

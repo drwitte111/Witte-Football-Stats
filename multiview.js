@@ -1,18 +1,29 @@
 'use strict';
 
-// 8-box multiview: paste a link into any box and it shows that page.
+// Multiview: choose 1-12 boxes, paste a link into any box and it shows that page.
 // Frames are sandboxed without popups or top navigation, so a page can't
 // open new windows or redirect the app.
 (() => {
-  const BOXES = 8;
+  const MAX = 12;
   const KEY = 'multiview';
+  const COUNT_KEY = 'multiviewCount';
+  // [columns, rows] for each box count.
+  const PORTRAIT = [null, [1, 1], [1, 2], [1, 3], [2, 2], [2, 3], [2, 3], [2, 4], [2, 4], [3, 3], [3, 4], [3, 4], [3, 4]];
+  const LANDSCAPE = [null, [1, 1], [2, 1], [3, 1], [2, 2], [3, 2], [3, 2], [4, 2], [4, 2], [3, 3], [4, 3], [4, 3], [4, 3]];
   const SANDBOX = 'allow-scripts allow-same-origin allow-presentation allow-forms';
 
   const root = document.getElementById('multiview');
   const grid = root.querySelector('.mv-grid');
   let links = [];
   try { links = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { links = []; }
-  links = Array.from({ length: BOXES }, (_, i) => links[i] || '');
+  links = Array.from({ length: MAX }, (_, i) => links[i] || '');
+
+  let count = parseInt(localStorage.getItem(COUNT_KEY), 10);
+  if (!(count >= 1 && count <= MAX)) {
+    const lastFilled = links.reduce((n, l, i) => (l ? i + 1 : n), 0);
+    count = lastFilled || 4;
+  }
+  const landscape = window.matchMedia('(orientation: landscape)');
 
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(links)); } catch (e) { /* ignore */ }
@@ -73,9 +84,36 @@
     box.innerHTML = boxHtml(i);
   }
 
+  function applyLayout() {
+    const solo = grid.classList.contains('solo');
+    const [cols, rows] = solo ? [1, 1] : (landscape.matches ? LANDSCAPE : PORTRAIT)[count];
+    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    root.querySelector('.mv-count').textContent = `${count} ${count === 1 ? 'box' : 'boxes'}`;
+    root.querySelector('[data-step="-1"]').disabled = count <= 1;
+    root.querySelector('[data-step="1"]').disabled = count >= MAX;
+  }
+
+  // Add or remove boxes at the end; boxes that stay keep playing.
   function render() {
-    grid.innerHTML = links.map((_, i) => `<div class="mv-box" data-i="${i}"></div>`).join('');
-    links.forEach((_, i) => renderBox(i));
+    while (grid.children.length > count) grid.lastElementChild.remove();
+    while (grid.children.length < count) {
+      const i = grid.children.length;
+      const box = document.createElement('div');
+      box.className = 'mv-box';
+      box.dataset.i = String(i);
+      grid.appendChild(box);
+      renderBox(i);
+    }
+    if (grid.querySelector('.mv-box.on') == null) grid.classList.remove('solo');
+    applyLayout();
+  }
+
+  function setCount(n) {
+    count = Math.max(1, Math.min(MAX, n));
+    try { localStorage.setItem(COUNT_KEY, String(count)); } catch (e) { /* ignore */ }
+    closeOverlay();
+    render();
   }
 
   function overlay(box, html) {
@@ -152,10 +190,11 @@
   function setSolo(i) {
     grid.classList.toggle('solo', i != null);
     [...grid.children].forEach((b, j) => b.classList.toggle('on', j === i));
+    applyLayout();
   }
 
   function open() {
-    if (!grid.children.length) render();
+    render();
     root.hidden = false;
     document.body.classList.add('noscroll');
   }
@@ -169,7 +208,13 @@
   document.getElementById('watch').addEventListener('click', open);
   root.querySelector('.mv-done').addEventListener('click', close);
   root.querySelector('.mv-clear-all').addEventListener('click', () => {
-    if (!links.some(Boolean) || !confirm('Clear all 8 boxes?')) return;
-    links = links.map(() => ''); save(); setSolo(null); render();
+    if (!links.some(Boolean) || !confirm('Clear every box?')) return;
+    links = links.map(() => ''); save(); setSolo(null);
+    [...grid.children].forEach((_, i) => renderBox(i));
   });
+  root.querySelector('.mv-stepper').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-step]');
+    if (b && !b.disabled) setCount(count + Number(b.dataset.step));
+  });
+  landscape.addEventListener('change', () => { if (!root.hidden) applyLayout(); });
 })();

@@ -336,7 +336,17 @@ h1 { font-size: 34px; line-height: 1.1; font-weight: 800; letter-spacing: -0.6px
   display: flex; align-items: center; justify-content: space-between;
   height: 44px; padding: 0 12px; flex: none;
 }
-.mv-title { font-weight: 700; font-size: 17px; }
+.mv-stepper {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--surface-2); border-radius: 999px; padding: 2px;
+}
+.mv-bar .mv-stepper button {
+  width: 34px; height: 30px; padding: 0; border-radius: 999px;
+  color: var(--text); font-size: 20px; font-weight: 500;
+}
+.mv-bar .mv-stepper button:active { background: var(--surface-3); }
+.mv-bar .mv-stepper button:disabled { color: var(--text-3); }
+.mv-count { min-width: 74px; text-align: center; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
 .mv-bar button {
   border: 0; background: transparent; color: var(--accent);
   font: 600 16px/1 -apple-system, system-ui, sans-serif; font-family: inherit; padding: 8px 4px;
@@ -346,14 +356,10 @@ h1 { font-size: 34px; line-height: 1.1; font-weight: 800; letter-spacing: -0.6px
 .mv-grid {
   flex: 1; min-height: 0;
   display: grid; gap: 3px; padding: 0 3px 3px;
-  grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(4, 1fr);
 }
 @media (orientation: landscape) {
-  .mv-grid { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); }
-  .mv-bar { height: 34px; }
+  .mv-bar { height: 38px; }
 }
-.mv-grid.solo { grid-template-columns: 1fr; grid-template-rows: 1fr; }
 .mv-grid.solo .mv-box:not(.on) { display: none; }
 
 .mv-box {

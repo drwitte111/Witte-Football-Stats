@@ -66,10 +66,25 @@
     else if (host === 'youtube.com' && u.pathname === '/watch') yt = u.searchParams.get('v') || '';
     else if (host === 'youtube.com' && /^\/(live|shorts|embed)\//.test(u.pathname)) yt = u.pathname.split('/')[2];
     if (yt) return `https://www.youtube.com/embed/${encodeURIComponent(yt)}?autoplay=1&mute=1&playsinline=1`;
+    // A channel's current live stream, when the link has the UC... channel id.
+    const ch = host === 'youtube.com' && u.pathname.match(/^\/channel\/(UC[\w-]+)/);
+    if (ch) return `https://www.youtube.com/embed/live_stream?channel=${ch[1]}&autoplay=1&mute=1&playsinline=1`;
     if (host === 'twitch.tv' && /^\/[^/]+\/?$/.test(u.pathname)) {
       return `https://player.twitch.tv/?channel=${encodeURIComponent(u.pathname.replace(/\//g, ''))}&parent=${location.hostname}&muted=true`;
     }
     return href;
+  }
+
+  // YouTube refuses to show its own pages (home, search, @channels) in a box.
+  function notEmbeddable(href) {
+    try {
+      const u = new URL(href);
+      const host = u.hostname.replace(/^www\.|^m\./, '');
+      if ((host === 'youtube.com' || host === 'youtu.be') && !/youtube\.com\/embed\//.test(embedUrl(href))) {
+        return 'YouTube only plays single videos or live streams in a box. Open the video, tap Share › Copy link, and paste that.';
+      }
+    } catch (e) { /* fall through */ }
+    return '';
   }
 
   function hostOf(href) {
@@ -81,8 +96,15 @@
     if (!href) {
       return `<button type="button" class="mv-add" data-act="edit"><span>+</span><small>Box ${i + 1}</small></button>`;
     }
+    const why = notEmbeddable(href);
+    if (why) {
+      return `<div class="mv-note"><p>${esc(why)}</p><button type="button" data-act="edit">Change link</button></div>
+        <button type="button" class="mv-more" data-act="menu" aria-label="Box ${i + 1} options">•••</button>`;
+    }
+    // Players such as YouTube's refuse to play without knowing the embedding
+    // site, so send our origin (never the full URL).
     return `
-      <iframe src="${esc(embedUrl(href))}" sandbox="${popups[i] ? SANDBOX_POPUPS : SANDBOX}" referrerpolicy="no-referrer"
+      <iframe src="${esc(embedUrl(href))}" sandbox="${popups[i] ? SANDBOX_POPUPS : SANDBOX}" referrerpolicy="strict-origin-when-cross-origin"
         allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen loading="lazy" title="Box ${i + 1}"></iframe>
       ${popups[i] ? '<span class="mv-badge">Pop-ups on</span>' : ''}
       <button type="button" class="mv-more" data-act="menu" aria-label="Box ${i + 1} options">•••</button>`;
